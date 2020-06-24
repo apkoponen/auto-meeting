@@ -1,5 +1,4 @@
-const { shell } = require("electron");
-const { app } = require("electron");
+const { app, shell } = require("electron");
 
 const { createGoogleApiAxios } = require("./google/googleApiAxios");
 const { createApiAxios } = require("./api/apiAxios");
