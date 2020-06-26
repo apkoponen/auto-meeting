@@ -89,9 +89,12 @@ async function initialize() {
             },
           }
         );
-        checkEventsToOpen(data.items, (link) => {
-          shell.openExternal(link);
-        });
+        checkEventsToOpen(
+          data.items.filter((event) => event.status === "confirmed"),
+          (link) => {
+            shell.openExternal(link);
+          }
+        );
       });
   }, intervalMs);
 }
