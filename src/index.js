@@ -1,5 +1,6 @@
 const { app, shell } = require("electron");
 const { ipcMain: ipc } = require("electron-better-ipc");
+const EventEmitter = require("events");
 
 const { createGoogleApiAxios } = require("./google/googleApiAxios");
 const { createApiAxios } = require("./api/apiAxios");
@@ -19,40 +20,36 @@ if (require("electron-squirrel-startup")) {
 const state = {
   calendars: [],
   events: [],
+  initialAccessToken: "",
 };
 
 const apiAxios = createApiAxios();
 
-async function authorize() {
-  const { data } = await apiAxios.post("/auth/");
-  shell.openExternal("http://automeeting.xyz/api/auth/start?state=" + data.id);
-  const response = await poll(async () => {
-    const response = await apiAxios.get(`/auth/${data.id}`);
-    if (response.status === 204) {
-      // Returning undefined informs poll that we want to continue polling
-      return;
-    }
-    return response;
-  }, 5000);
-  await setRefreshToken(response.data.refresh_token);
-  return response.data.access_token;
-}
+const events = {
+  initialAuth: "initialAuth",
+  reAuthorizeWithGoogle: "reAuthorizeWithGoogle",
+  startGoogleEventLoop: "startGoogleEventLoop",
+};
 
-async function initialize() {
-  let initialAccessToken;
-  if (!filesystemStore.get("hasAuthenticated")) {
-    const authWindow = await openAuthWindow();
-    await ipc.callFocusedRenderer("ready-to-start-auth");
-    initialAccessToken = await authorize();
-    authWindow.close();
-    filesystemStore.set("hasAuthenticated", true);
-  }
+class MainEmitter extends EventEmitter {}
+const mainEmitter = new MainEmitter();
 
+mainEmitter.on(events.initialAuth, async function () {
+  const authWindow = await openAuthWindow();
+  await ipc.callFocusedRenderer("ready-to-start-auth");
+  state.initialAccessToken = await authorize();
+  authWindow.close();
+  filesystemStore.set("hasAuthenticated", true);
+  mainEmitter.emit(events.startGoogleEventLoop);
+});
+
+mainEmitter.on(events.reAuthorizeWithGoogle, async function () {
+  state.initialAccessToken = await authorize();
+  mainEmitter.emit(events.startGoogleEventLoop);
+});
+
+mainEmitter.on(events.startGoogleEventLoop, async function () {
   const refreshToken = await getRefreshToken();
-  if (!refreshToken) {
-    initialAccessToken = await authorize();
-  }
-
   const googleApiAxios = createGoogleApiAxios(
     async function fetchAccessTokenFromServer() {
       try {
@@ -64,8 +61,10 @@ async function initialize() {
         // TODO: Inform the user
       }
     },
-    initialAccessToken
+    state.initialAccessToken
   );
+  // Reset access token once we've started with it.
+  state.initialAccessToken = "";
 
   const response = await googleApiAxios.get(
     "/calendar/v3/users/me/calendarList"
@@ -102,6 +101,36 @@ async function initialize() {
         );
       });
   }, intervalMs);
+});
+
+async function authorize() {
+  const { data } = await apiAxios.post("/auth/");
+  shell.openExternal("http://automeeting.xyz/api/auth/start?state=" + data.id);
+  const response = await poll(async () => {
+    const response = await apiAxios.get(`/auth/${data.id}`);
+    if (response.status === 204) {
+      // Returning undefined informs poll that we want to continue polling
+      return;
+    }
+    return response;
+  }, 5000);
+  await setRefreshToken(response.data.refresh_token);
+  return response.data.access_token;
+}
+
+async function initialize() {
+  if (!filesystemStore.get("hasAuthenticatedz")) {
+    mainEmitter.emit(events.initialAuth);
+    return;
+  }
+
+  const refreshToken = await getRefreshToken();
+  if (!refreshToken) {
+    mainEmitter.emit(events.reAuthorizeWithGoogle);
+    return;
+  }
+
+  mainEmitter.emit(events.startGoogleEventLoop);
 }
 
 const startProject = async () => {
