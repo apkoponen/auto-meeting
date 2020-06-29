@@ -1,4 +1,5 @@
 const { app, shell } = require("electron");
+const { ipcMain: ipc } = require("electron-better-ipc");
 
 const { createGoogleApiAxios } = require("./google/googleApiAxios");
 const { createApiAxios } = require("./api/apiAxios");
@@ -7,6 +8,7 @@ const { getRefreshToken, setRefreshToken } = require("./storage/secureStore");
 const { poll } = require("./utils/polling");
 const { checkEventsToOpen } = require("./utils/events");
 const { createTrayMenu } = require("./electron/tray");
+const { openAuthWindow } = require("./ui/windows");
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require("electron-squirrel-startup")) {
@@ -39,7 +41,10 @@ async function authorize() {
 async function initialize() {
   let initialAccessToken;
   if (!filesystemStore.get("hasAuthenticated")) {
+    const authWindow = await openAuthWindow();
+    await ipc.callFocusedRenderer("ready-to-start-auth");
     initialAccessToken = await authorize();
+    authWindow.close();
     filesystemStore.set("hasAuthenticated", true);
   }
 
