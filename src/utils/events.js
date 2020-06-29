@@ -1,4 +1,3 @@
-const { shell } = require("electron");
 const getUrls = require("get-urls");
 
 function parseAndFindMeetingLink(data) {
