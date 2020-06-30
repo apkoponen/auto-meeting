@@ -10,6 +10,7 @@ const { poll } = require("./utils/polling");
 const { checkEventsToOpen } = require("./utils/events");
 const { createTrayMenu } = require("./electron/tray");
 const { openAuthWindow } = require("./ui/windows");
+const uiEvents = require("./ui/uiEvents");
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require("electron-squirrel-startup")) {
@@ -21,11 +22,13 @@ const state = {
   calendars: [],
   events: [],
   initialAccessToken: "",
+  authWindow: null,
 };
 
 const apiAxios = createApiAxios();
 
-const events = {
+const mainEvents = {
+  initialStartUp: "initialStartUp",
   initialAuth: "initialAuth",
   reAuthorizeWithGoogle: "reAuthorizeWithGoogle",
   startGoogleEventLoop: "startGoogleEventLoop",
@@ -34,21 +37,29 @@ const events = {
 class MainEmitter extends EventEmitter {}
 const mainEmitter = new MainEmitter();
 
-mainEmitter.on(events.initialAuth, async function () {
-  const authWindow = await openAuthWindow();
-  await ipc.callFocusedRenderer("ready-to-start-auth");
+mainEmitter.on(mainEvents.initialStartUp, async function () {
+  state.authWindow = await openAuthWindow();
+});
+
+ipc.answerRenderer(uiEvents.startAuth, function () {
+  mainEmitter.emit(mainEvents.initialAuth);
+});
+
+mainEmitter.on(mainEvents.initialAuth, async function () {
   state.initialAccessToken = await authorize();
-  authWindow.close();
+  if (state.authWindow) {
+    state.authWindow.close();
+  }
   filesystemStore.set("hasAuthenticated", true);
-  mainEmitter.emit(events.startGoogleEventLoop);
+  mainEmitter.emit(mainEvents.startGoogleEventLoop);
 });
 
-mainEmitter.on(events.reAuthorizeWithGoogle, async function () {
+mainEmitter.on(mainEvents.reAuthorizeWithGoogle, async function () {
   state.initialAccessToken = await authorize();
-  mainEmitter.emit(events.startGoogleEventLoop);
+  mainEmitter.emit(mainEvents.startGoogleEventLoop);
 });
 
-mainEmitter.on(events.startGoogleEventLoop, async function () {
+mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
   const refreshToken = await getRefreshToken();
   const googleApiAxios = createGoogleApiAxios(
     async function fetchAccessTokenFromServer() {
@@ -119,18 +130,18 @@ async function authorize() {
 }
 
 async function initialize() {
-  if (!filesystemStore.get("hasAuthenticatedz")) {
-    mainEmitter.emit(events.initialAuth);
+  if (!filesystemStore.get("hasAuthenticated")) {
+    mainEmitter.emit(mainEvents.initialStartUp);
     return;
   }
 
   const refreshToken = await getRefreshToken();
   if (!refreshToken) {
-    mainEmitter.emit(events.reAuthorizeWithGoogle);
+    mainEmitter.emit(mainEvents.reAuthorizeWithGoogle);
     return;
   }
 
-  mainEmitter.emit(events.startGoogleEventLoop);
+  mainEmitter.emit(mainEvents.startGoogleEventLoop);
 }
 
 const startProject = async () => {
