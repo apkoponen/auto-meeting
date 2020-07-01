@@ -9,7 +9,7 @@ const { getRefreshToken, setRefreshToken } = require("./storage/secureStore");
 const { poll } = require("./utils/polling");
 const { checkEventsToOpen } = require("./utils/events");
 const { createTrayMenu } = require("./electron/tray");
-const { openAuthWindow } = require("./ui/windows");
+const { openAuthWindow, openReAuthWindow } = require("./ui/windows");
 const uiEvents = require("./ui/uiEvents");
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -28,16 +28,17 @@ const state = {
 const apiAxios = createApiAxios();
 
 const mainEvents = {
-  initialStartUp: "initialStartUp",
+  initialAuthWindow: "initialAuthWindow",
   initialAuth: "initialAuth",
-  reAuthorizeWithGoogle: "reAuthorizeWithGoogle",
+  reAuthWindow: "reAuthWindow",
+  reAuthWithGoogle: "reAuthWithGoogle",
   startGoogleEventLoop: "startGoogleEventLoop",
 };
 
 class MainEmitter extends EventEmitter {}
 const mainEmitter = new MainEmitter();
 
-mainEmitter.on(mainEvents.initialStartUp, async function () {
+mainEmitter.on(mainEvents.initialAuthWindow, async function () {
   state.authWindow = await openAuthWindow();
 });
 
@@ -54,8 +55,19 @@ mainEmitter.on(mainEvents.initialAuth, async function () {
   mainEmitter.emit(mainEvents.startGoogleEventLoop);
 });
 
-mainEmitter.on(mainEvents.reAuthorizeWithGoogle, async function () {
+mainEmitter.on(mainEvents.reAuthWindow, async function () {
+  state.authWindow = await openReAuthWindow();
+});
+
+ipc.answerRenderer(uiEvents.startReAuth, function () {
+  mainEmitter.emit(mainEvents.reAuthWithGoogle);
+});
+
+mainEmitter.on(mainEvents.reAuthWithGoogle, async function () {
   state.initialAccessToken = await authorize();
+  if (state.authWindow) {
+    state.authWindow.close();
+  }
   mainEmitter.emit(mainEvents.startGoogleEventLoop);
 });
 
@@ -63,55 +75,59 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
   const refreshToken = await getRefreshToken();
   const googleApiAxios = createGoogleApiAxios(
     async function fetchAccessTokenFromServer() {
-      try {
-        const response = await apiAxios.post("/auth/refresh", {
-          refreshToken,
-        });
-        return response.data.access_token;
-      } catch (e) {
-        // TODO: Inform the user
-      }
+      return "";
+      const response = await apiAxios.post("/auth/refresh", {
+        refreshToken,
+      });
+      return response.data.access_token;
     },
     state.initialAccessToken
   );
   // Reset access token once we've started with it.
   state.initialAccessToken = "";
 
-  const response = await googleApiAxios.get(
-    "/calendar/v3/users/me/calendarList"
-  );
-  state.calendars = response.data.items.map((calendar) => ({
-    googleCalendar: calendar,
-    enabled: true,
-  }));
-  const msInMinute = 60 * 1000;
-  const intervalMs = msInMinute * 15;
+  try {
+    const response = await googleApiAxios.get(
+      "/calendar/v3/users/me/calendarList"
+    );
+    state.calendars = response.data.items.map((calendar) => ({
+      googleCalendar: calendar,
+      enabled: true,
+    }));
+    const msInMinute = 60 * 1000;
+    const intervalMs = msInMinute * 15;
 
-  poll(function checkCalendars() {
-    const timeMin = new Date().toISOString();
-    const timeMax = new Date(Date.now() + intervalMs * 1000).toISOString();
+    poll(function checkCalendars() {
+      const timeMin = new Date().toISOString();
+      const timeMax = new Date(Date.now() + intervalMs * 1000).toISOString();
 
-    state.calendars
-      .filter((calendar) => calendar.googleCalendar.primary)
-      .forEach(async (calendar) => {
-        const { data } = await googleApiAxios.get(
-          `/calendar/v3/calendars/${calendar.googleCalendar.id}/events`,
-          {
-            params: {
-              singleEvents: true,
-              timeMin,
-              timeMax,
-            },
-          }
-        );
-        checkEventsToOpen(
-          data.items.filter((event) => event.status === "confirmed"),
-          (link) => {
-            shell.openExternal(link);
-          }
-        );
-      });
-  }, intervalMs);
+      state.calendars
+        .filter((calendar) => calendar.googleCalendar.primary)
+        .forEach(async (calendar) => {
+          const { data } = await googleApiAxios.get(
+            `/calendar/v3/calendars/${calendar.googleCalendar.id}/events`,
+            {
+              params: {
+                singleEvents: true,
+                timeMin,
+                timeMax,
+              },
+            }
+          );
+          checkEventsToOpen(
+            data.items.filter((event) => event.status === "confirmed"),
+            (link) => {
+              shell.openExternal(link);
+            }
+          );
+        });
+    }, intervalMs);
+  } catch (error) {
+    if (error && error.response && error.response.status === 401) {
+      mainEmitter.emit(mainEvents.reAuthWindow);
+    }
+    // TODO: Handle all other possible errors gracefully.
+  }
 });
 
 async function authorize() {
@@ -131,13 +147,13 @@ async function authorize() {
 
 async function initialize() {
   if (!filesystemStore.get("hasAuthenticated")) {
-    mainEmitter.emit(mainEvents.initialStartUp);
+    mainEmitter.emit(mainEvents.initialAuthWindow);
     return;
   }
 
   const refreshToken = await getRefreshToken();
   if (!refreshToken) {
-    mainEmitter.emit(mainEvents.reAuthorizeWithGoogle);
+    mainEmitter.emit(mainEvents.reAuthWithGoogle);
     return;
   }
 

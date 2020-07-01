@@ -1,8 +1,8 @@
 const { BrowserWindow } = require("electron");
 const path = require("path");
 
-async function openAuthWindow() {
-  const authWindow = new BrowserWindow({
+function createSimpleWindow() {
+  const window = new BrowserWindow({
     width: 700,
     height: 300,
     icon: path.join(__dirname, "..", "assets", "images", "logo_color.png"),
@@ -10,13 +10,23 @@ async function openAuthWindow() {
       nodeIntegration: true,
     },
   });
-  authWindow.setMenuBarVisibility(false);
+  window.setMenuBarVisibility(false);
+  return window;
+}
 
+async function openAuthWindow() {
+  const authWindow = createSimpleWindow();
   await authWindow.loadFile(path.join(__dirname, "auth.html"));
-
   return authWindow;
+}
+
+async function openReAuthWindow() {
+  const reAuthWindow = createSimpleWindow();
+  await reAuthWindow.loadFile(path.join(__dirname, "reAuth.html"));
+  return reAuthWindow;
 }
 
 module.exports = {
   openAuthWindow,
+  openReAuthWindow,
 };
