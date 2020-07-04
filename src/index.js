@@ -98,7 +98,7 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
 
     poll(function checkCalendars() {
       const timeMin = new Date().toISOString();
-      const timeMax = new Date(Date.now() + intervalMs * 1000).toISOString();
+      const timeMax = new Date(Date.now() + intervalMs).toISOString();
 
       state.calendars
         .filter((calendar) => calendar.googleCalendar.primary)
