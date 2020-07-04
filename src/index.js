@@ -75,7 +75,6 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
   const refreshToken = await getRefreshToken();
   const googleApiAxios = createGoogleApiAxios(
     async function fetchAccessTokenFromServer() {
-      return "";
       const response = await apiAxios.post("/auth/refresh", {
         refreshToken,
       });
