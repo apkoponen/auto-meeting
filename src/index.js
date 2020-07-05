@@ -2,14 +2,13 @@ const { app, shell } = require("electron");
 const { ipcMain: ipc } = require("electron-better-ipc");
 const EventEmitter = require("events");
 
-const { createGoogleApiAxios } = require("./google/googleApiAxios");
-const { createApiAxios } = require("./api/apiAxios");
 const { filesystemStore } = require("./storage/filesystemStore");
-const { getRefreshToken, setRefreshToken } = require("./storage/secureStore");
 const { poll } = require("./utils/polling");
 const { checkEventsToOpen } = require("./utils/events");
 const { createTrayMenu } = require("./electron/tray");
 const { openAuthWindow, openReAuthWindow } = require("./ui/windows");
+const { createApiRepository } = require("./api/apiRepository");
+const { createGoogleRepository } = require("./google/googleRepository");
 const uiEvents = require("./ui/uiEvents");
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -24,8 +23,7 @@ const state = {
   initialAccessToken: "",
   authWindow: null,
 };
-
-const apiAxios = createApiAxios();
+let apiRepository;
 
 const mainEvents = {
   initialAuthWindow: "initialAuthWindow",
@@ -72,30 +70,22 @@ mainEmitter.on(mainEvents.reAuthWithGoogle, async function () {
 });
 
 mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
-  const refreshToken = await getRefreshToken();
-  const googleApiAxios = createGoogleApiAxios(
-    async function fetchAccessTokenFromServer() {
-      const response = await apiAxios.post("/auth/refresh", {
-        refreshToken,
-      });
-      return response.data.access_token;
-    },
+  const googleRepository = createGoogleRepository(
+    apiRepository.fetchAccessToken,
     state.initialAccessToken
   );
+
   // Reset access token once we've started with it.
   state.initialAccessToken = "";
 
   try {
-    const response = await googleApiAxios.get(
-      "/calendar/v3/users/me/calendarList"
-    );
-    state.calendars = response.data.items.map((calendar) => ({
+    const googleCalendars = await googleRepository.fetchCalendars();
+    state.calendars = googleCalendars.map((calendar) => ({
       googleCalendar: calendar,
       enabled: true,
     }));
     const msInMinute = 60 * 1000;
     const intervalMs = msInMinute * 15;
-
     poll(function checkCalendars() {
       const timeMin = new Date().toISOString();
       const timeMax = new Date(Date.now() + intervalMs).toISOString();
@@ -103,18 +93,13 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
       state.calendars
         .filter((calendar) => calendar.googleCalendar.primary)
         .forEach(async (calendar) => {
-          const { data } = await googleApiAxios.get(
-            `/calendar/v3/calendars/${calendar.googleCalendar.id}/events`,
-            {
-              params: {
-                singleEvents: true,
-                timeMin,
-                timeMax,
-              },
-            }
+          const googleEvents = await googleRepository.fetchEvents(
+            calendar.googleCalendar.id,
+            timeMin,
+            timeMax
           );
           checkEventsToOpen(
-            data.items.filter((event) => event.status === "confirmed"),
+            googleEvents.filter((event) => event.status === "confirmed"),
             (link) => {
               shell.openExternal(link);
             }
@@ -130,28 +115,25 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
 });
 
 async function authorize() {
-  const { data } = await apiAxios.post("/auth/");
-  shell.openExternal("http://automeeting.xyz/api/auth/start?state=" + data.id);
-  const response = await poll(async () => {
-    const response = await apiAxios.get(`/auth/${data.id}`);
-    if (response.status === 204) {
-      // Returning undefined informs poll that we want to continue polling
-      return;
-    }
-    return response;
-  }, 5000);
-  await setRefreshToken(response.data.refresh_token);
-  return response.data.access_token;
+  const authorizationId = await apiRepository.createNewAuthorization();
+  shell.openExternal(
+    "http://automeeting.xyz/api/auth/start?state=" + authorizationId
+  );
+  const accessToken = await apiRepository.waitForAuthorizationToComplete(
+    authorizationId
+  );
+  return accessToken;
 }
 
 async function initialize() {
+  apiRepository = await createApiRepository();
+
   if (!filesystemStore.get("hasAuthenticated")) {
     mainEmitter.emit(mainEvents.initialAuthWindow);
     return;
   }
 
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) {
+  if (!apiRepository.hasRefreshToken()) {
     mainEmitter.emit(mainEvents.reAuthWithGoogle);
     return;
   }
