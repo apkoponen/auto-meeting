@@ -19,23 +19,37 @@ function openEventLinkOnSchedule(startDate, meetingLink, openLinkCallback) {
   setTimeout(() => openLinkCallback(meetingLink), timeTo30SecsBefore);
 }
 
-function checkEventsToOpen(events, openLinkCallback) {
+function returnSchedulableEvents(googleEvents) {
+  return googleEvents
+    .filter((event) => event.status === "confirmed")
+    .reduce((events, googleEvent) => {
+      const meetingLink =
+        googleEvent.hangoutLink ||
+        (googleEvent.description &&
+          parseAndFindMeetingLink(googleEvent.description));
+      if (meetingLink) {
+        events.push({
+          meetingLink,
+          googleEvent,
+        });
+      }
+      return events;
+    }, []);
+}
+
+function openEventMeetingLinksOnSchedule(events, openLinkCallback) {
   events.forEach((event) => {
-    const meetingLink =
-      event.hangoutLink ||
-      (event.description && parseAndFindMeetingLink(event.description));
-    if (meetingLink) {
-      openEventLinkOnSchedule(
-        new Date(event.start.dateTime),
-        meetingLink,
-        openLinkCallback
-      );
-    }
+    openEventLinkOnSchedule(
+      new Date(event.googleEvent.start.dateTime),
+      event.meetingLink,
+      openLinkCallback
+    );
   });
 }
 
 module.exports = {
   parseAndFindMeetingLink,
   openEventLinkOnSchedule,
-  checkEventsToOpen,
+  returnSchedulableEvents,
+  openEventMeetingLinksOnSchedule,
 };

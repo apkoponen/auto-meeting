@@ -4,7 +4,10 @@ const EventEmitter = require("events");
 
 const { filesystemStore } = require("./storage/filesystemStore");
 const { poll } = require("./utils/polling");
-const { checkEventsToOpen } = require("./utils/events");
+const {
+  openEventMeetingLinksOnSchedule,
+  returnSchedulableEvents,
+} = require("./utils/events");
 const { createTrayMenu } = require("./electron/tray");
 const { openAuthWindow, openReAuthWindow } = require("./ui/windows");
 const { createApiRepository } = require("./api/apiRepository");
@@ -98,12 +101,10 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
             timeMin,
             timeMax
           );
-          checkEventsToOpen(
-            googleEvents.filter((event) => event.status === "confirmed"),
-            (link) => {
-              shell.openExternal(link);
-            }
-          );
+          const events = returnSchedulableEvents(googleEvents);
+          openEventMeetingLinksOnSchedule(events, (link) => {
+            shell.openExternal(link);
+          });
         });
     }, intervalMs);
   } catch (error) {

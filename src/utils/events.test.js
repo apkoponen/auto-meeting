@@ -1,7 +1,9 @@
 const {
   parseAndFindMeetingLink,
   openEventLinkOnSchedule,
+  returnSchedulableEvents,
 } = require("./events");
+const { testevents } = require("./events.testadata");
 
 describe("parseAndFindMeetingLink", () => {
   it("should parse Microsoft Teams links", () => {
@@ -87,6 +89,52 @@ Ortseinwahl suchen: https://zoom.us/u/13123123`;
     expect(parseAndFindMeetingLink(data)).toBe(
       "https://some-organisation.zoom.us/j/734097133"
     );
+  });
+});
+
+describe("returnSchedulableEvents", () => {
+  it("should filter out events without meetings", () => {
+    expect(returnSchedulableEvents(testevents)).toEqual([]);
+  });
+
+  it("should return googleEvent and meetingLink", () => {
+    const meetingLink =
+      "https://us04web.zoom.us/j/78667075110?pwd=ZUdsdHRJMEdtQ2NjN253K3MvVlBSZz0a";
+    const googleEvent = {
+      kind: "calendar#event",
+      etag: '"3236593796465000"',
+      id:
+        "_71144g9i8ko42b9g8d1j8b9k60asdab9o8osjib9p70s30cpj71346hi46s_20200625T150000Z",
+      status: "confirmed",
+      htmlLink:
+        "https://www.google.com/calendar/event?eid=XzcxMTQ0ZzasdOGtvNDJiO231FqOGI5azYwb2thYjlvOG9zamliOXA3MHMzMGNwajcxMzQ2aGk0NnNfMjAyMDA2MjVUMTUwMDAwWiBhcC5rb3BvbmVuQG0",
+      created: "2019-08-14T07:51:30.000Z",
+      updated: "2019-09-12T14:01:38.319Z",
+      summary: "Group meeting",
+      description: meetingLink,
+      creator: { email: "example@gmail.com", self: true },
+      organizer: { email: "example@gmail.com", self: true },
+      start: {
+        dateTime: "2020-06-25T18:00:00+03:00",
+        timeZone: "Europe/Helsinki",
+      },
+      end: {
+        dateTime: "2020-06-25T20:00:00+03:00",
+        timeZone: "Europe/Helsinki",
+      },
+      recurringEventId:
+        "_71144g9i8ko42b9g8d1j821360oksdao8osjib9p70s30cpj71346hi46s",
+      originalStartTime: {
+        dateTime: "2020-06-25T18:00:00+03:00",
+        timeZone: "Europe/Helsinki",
+      },
+      iCalUID: "B3BA2E0A-0CC4-401E-8F99-AD80338FCFD7",
+      sequence: 0,
+      reminders: { useDefault: false },
+    };
+    const events = returnSchedulableEvents([googleEvent]);
+    expect(events[0].meetingLink).toEqual(meetingLink);
+    expect(events[0].googleEvent).toEqual(googleEvent);
   });
 });
 
