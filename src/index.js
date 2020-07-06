@@ -25,6 +25,7 @@ const state = {
   events: [],
   initialAccessToken: "",
   authWindow: null,
+  scheduledEvents: new Set(),
 };
 let apiRepository;
 
@@ -89,9 +90,10 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
     }));
     const msInMinute = 60 * 1000;
     const intervalMs = msInMinute * 15;
+    const timeMaxInterval = msInMinute * 30;
     poll(function checkCalendars() {
       const timeMin = new Date().toISOString();
-      const timeMax = new Date(Date.now() + intervalMs).toISOString();
+      const timeMax = new Date(Date.now() + timeMaxInterval).toISOString();
 
       state.calendars
         .filter((calendar) => calendar.googleCalendar.primary)
@@ -101,10 +103,15 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
             timeMin,
             timeMax
           );
-          const events = returnSchedulableEvents(googleEvents);
+          const events = returnSchedulableEvents(googleEvents).filter(
+            (event) => !state.scheduledEvents.has(event.googleEvent.id)
+          );
           openEventMeetingLinksOnSchedule(events, (link) => {
             shell.openExternal(link);
           });
+          events.forEach((event) =>
+            state.scheduledEvents.add(event.googleEvent.id)
+          );
         });
     }, intervalMs);
   } catch (error) {
