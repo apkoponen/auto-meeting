@@ -39,7 +39,8 @@ function returnSchedulableEvents(googleEvents) {
 
 function openEventMeetingLinksOnSchedule(events, openLinkCallback) {
   events.forEach((event) => {
-    openEventLinkOnSchedule(
+    // Use module.exports to allow tests overrides
+    module.exports.openEventLinkOnSchedule(
       new Date(event.googleEvent.start.dateTime),
       event.meetingLink,
       openLinkCallback
