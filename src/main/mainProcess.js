@@ -8,7 +8,12 @@ const {
   openEventMeetingLinksOnSchedule,
   returnSchedulableEvents,
 } = require("../utils/events");
-const { openAuthWindow, openReAuthWindow } = require("../ui/windows");
+const {
+  openAuthWindow,
+  closeAuthWindow,
+  openReAuthWindow,
+  closeReAuthWindow,
+} = require("../ui/windows");
 const { createApiRepository } = require("../api/apiRepository");
 const { createGoogleRepository } = require("../google/googleRepository");
 const uiEvents = require("../ui/uiEvents");
@@ -17,7 +22,6 @@ const state = {
   calendars: [],
   events: [],
   initialAccessToken: "",
-  authWindow: null,
   scheduledEvents: new Set(),
 };
 let apiRepository;
@@ -34,7 +38,7 @@ class MainEmitter extends EventEmitter {}
 const mainEmitter = new MainEmitter();
 
 mainEmitter.on(mainEvents.initialAuthWindow, async function () {
-  state.authWindow = await openAuthWindow();
+  await openAuthWindow();
 });
 
 ipc.answerRenderer(uiEvents.startAuth, function () {
@@ -43,15 +47,13 @@ ipc.answerRenderer(uiEvents.startAuth, function () {
 
 mainEmitter.on(mainEvents.initialAuth, async function () {
   state.initialAccessToken = await authorize();
-  if (state.authWindow) {
-    state.authWindow.close();
-  }
+  closeAuthWindow();
   filesystemStore.set("hasAuthenticated", true);
   mainEmitter.emit(mainEvents.startGoogleEventLoop);
 });
 
 mainEmitter.on(mainEvents.reAuthWindow, async function () {
-  state.authWindow = await openReAuthWindow();
+  await openReAuthWindow();
 });
 
 ipc.answerRenderer(uiEvents.startReAuth, function () {
@@ -60,9 +62,7 @@ ipc.answerRenderer(uiEvents.startReAuth, function () {
 
 mainEmitter.on(mainEvents.reAuthWithGoogle, async function () {
   state.initialAccessToken = await authorize();
-  if (state.authWindow) {
-    state.authWindow.close();
-  }
+  closeReAuthWindow();
   mainEmitter.emit(mainEvents.startGoogleEventLoop);
 });
 
