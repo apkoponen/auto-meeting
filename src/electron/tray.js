@@ -1,5 +1,6 @@
 const path = require("path");
-const { app, Menu, Tray, BrowserWindow } = require("electron");
+const { app, Menu, Tray } = require("electron");
+const { openInfoWindow } = require("../ui/windows");
 
 function createTrayMenu() {
   const tray = new Tray(
@@ -8,20 +9,8 @@ function createTrayMenu() {
   const contextMenu = Menu.buildFromTemplate([
     {
       label: "Open",
-      click: async () => {
-        // Create the browser window.
-        const mainWindow = new BrowserWindow({
-          width: 800,
-          height: 600,
-        });
-
-        // and load the index.html of the app.
-        mainWindow.loadFile(path.join(__dirname, "index.html"));
-
-        // Open the DevTools.
-        mainWindow.webContents.openDevTools();
-
-        //await shell.openExternal('https://electronjs.org')
+      click: () => {
+        openInfoWindow();
       },
     },
     {

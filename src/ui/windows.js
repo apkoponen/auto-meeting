@@ -1,7 +1,7 @@
 const { BrowserWindow } = require("electron");
 const path = require("path");
 
-let authWindow, reAuthWindow;
+let authWindow, reAuthWindow, infoWindow;
 
 function createSimpleWindow() {
   const window = new BrowserWindow({
@@ -40,9 +40,16 @@ function closeReAuthWindow() {
   }
 }
 
+async function openInfoWindow() {
+  infoWindow = createSimpleWindow();
+  await infoWindow.loadFile(path.join(__dirname, "info.html"));
+  return infoWindow;
+}
+
 module.exports = {
   openAuthWindow,
   closeAuthWindow,
   openReAuthWindow,
   closeReAuthWindow,
+  openInfoWindow,
 };

@@ -22,7 +22,7 @@ const state = {
   calendars: [],
   events: [],
   initialAccessToken: "",
-  scheduledEvents: new Set(),
+  scheduledEvents: new Map(),
 };
 let apiRepository;
 
@@ -32,10 +32,33 @@ const mainEvents = {
   reAuthWindow: "reAuthWindow",
   reAuthWithGoogle: "reAuthWithGoogle",
   startGoogleEventLoop: "startGoogleEventLoop",
+  updateUIState: "updateUIState",
 };
 
 class MainEmitter extends EventEmitter {}
 const mainEmitter = new MainEmitter();
+
+mainEmitter.on(mainEvents.updateUIState, async function () {
+  ipc.sendToRenderers(uiEvents.stateUpdate, {
+    calendars: state.calendars,
+    events: Array.from(state.scheduledEvents.values()),
+  });
+});
+
+setInterval(() => {
+  mainEmitter.emit(mainEvents.updateUIState);
+}, 5000);
+
+ipc.answerRenderer(uiEvents.toggleCalendar, function ({ calendarId, enabled }) {
+  const calendar = state.calendars.find(
+    (calendar) => calendar.googleCalendar.id === calendarId
+  );
+  if (calendar) {
+    calendar.enabled = enabled;
+    // TODO: Persist on disk
+    // TODO: Remove scheduled events from calendar
+  }
+});
 
 mainEmitter.on(mainEvents.initialAuthWindow, async function () {
   await openAuthWindow();
@@ -75,22 +98,22 @@ async function checkCalendars(
   const timeMin = new Date().toISOString();
   const timeMax = new Date(Date.now() + timeMaxInterval).toISOString();
   await Promise.all(
-    calendars
-      .filter((calendar) => calendar.googleCalendar.primary)
-      .map(async (calendar) => {
-        const googleEvents = await fetchEvents(
-          calendar.googleCalendar.id,
-          timeMin,
-          timeMax
-        );
-        const events = returnSchedulableEvents(googleEvents).filter(
-          (event) => !scheduledEvents.has(event.googleEvent.id)
-        );
-        openEventMeetingLinksOnSchedule(events, (link) => {
-          shell.openExternal(link);
-        });
-        events.forEach((event) => scheduledEvents.add(event.googleEvent.id));
-      })
+    calendars.map(async (calendar) => {
+      const googleEvents = await fetchEvents(
+        calendar.googleCalendar.id,
+        timeMin,
+        timeMax
+      );
+      const eventsToSchedule = returnSchedulableEvents(googleEvents).filter(
+        (event) => !scheduledEvents.has(event.googleEvent.id)
+      );
+      openEventMeetingLinksOnSchedule(eventsToSchedule, (link) => {
+        shell.openExternal(link);
+      });
+      eventsToSchedule.forEach((event) =>
+        scheduledEvents.set(event.googleEvent.id, event)
+      );
+    })
   );
 }
 
@@ -112,16 +135,15 @@ mainEmitter.on(mainEvents.startGoogleEventLoop, async function () {
     const msInMinute = 60 * 1000;
     const intervalMs = msInMinute * 15;
     const timeMaxInterval = msInMinute * 30;
-    poll(
-      () =>
-        checkCalendars(
-          state.calendars,
-          state.scheduledEvents,
-          googleRepository.fetchEvents,
-          timeMaxInterval
-        ),
-      intervalMs
-    );
+    poll(async () => {
+      await checkCalendars(
+        state.calendars.filter((calendar) => calendar.enabled),
+        state.scheduledEvents,
+        googleRepository.fetchEvents,
+        timeMaxInterval
+      );
+      mainEmitter.emit(mainEvents.updateUIState);
+    }, intervalMs);
   } catch (error) {
     if (error && error.response && error.response.status === 401) {
       mainEmitter.emit(mainEvents.reAuthWindow);
