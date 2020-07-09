@@ -45,10 +45,6 @@ mainEmitter.on(mainEvents.updateUIState, async function () {
   });
 });
 
-setInterval(() => {
-  mainEmitter.emit(mainEvents.updateUIState);
-}, 5000);
-
 ipc.answerRenderer(uiEvents.toggleCalendar, function ({ calendarId, enabled }) {
   const calendar = state.calendars.find(
     (calendar) => calendar.googleCalendar.id === calendarId
