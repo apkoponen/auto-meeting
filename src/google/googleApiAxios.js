@@ -6,6 +6,7 @@ function getAuthorizationHeader(accessToken) {
 
 function createGoogleApiAxios(refreshCallback, initialAccessToken) {
   const headers = {};
+  var additional_headers = { 'X-Add-Magic': true};
   if (initialAccessToken) {
     headers["Authorization"] = getAuthorizationHeader(initialAccessToken);
   }
